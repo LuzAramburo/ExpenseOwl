@@ -339,12 +339,14 @@
         document.getElementById('showAllToggle').addEventListener('change', updateTable);
 
         document.getElementById('prevMonth').addEventListener('click', () => {
+            currentDate.setDate(1);
             currentDate.setMonth(currentDate.getMonth() - 1);
             updateMonthDisplay();
             updateTable();
         });
 
         document.getElementById('nextMonth').addEventListener('click', () => {
+            currentDate.setDate(1);
             currentDate.setMonth(currentDate.getMonth() + 1);
             updateMonthDisplay();
             updateTable();
