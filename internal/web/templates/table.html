@@ -34,6 +34,28 @@
         .expense-table th.sortable.desc i {
             opacity: 1;
         }
+        .table-controls {
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .filter-row {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .filter-row select,
+        .filter-row input[type="text"] {
+            padding: 0.4rem 0.6rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+        .filter-row input[type="text"] {
+            flex: 1;
+            min-width: 160px;
+        }
     </style>
 </head>
 <body>
@@ -60,12 +82,6 @@
             <div class="current-month" id="currentMonth"></div>
             <button id="nextMonth" class="nav-button"><i class="fa-solid fa-arrow-right"></i></button>
         </div>
-        
-        <div class="table-controls">
-            <label for="showAllToggle">
-                <input type="checkbox" id="showAllToggle" class="styled-checkbox"> Show All Transactions
-            </label>
-        </div>
 
         <div class="form-container">
             <form id="expenseForm" class="expense-form">
@@ -73,7 +89,7 @@
                     <label for="name">Name</label>
                     <input type="text" id="name" value="-" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="category">Category</label>
                     <select id="category" required>
@@ -89,12 +105,12 @@
                     </div>
                     <div id="tags-dropdown" class="tags-dropdown"></div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="amount">Amount</label>
                     <input type="number" id="amount" step="0.01" min="0.01" max="9000000000000000" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="date">Date</label>
                     <input type="date" id="date" required>
@@ -107,7 +123,7 @@
                         document.getElementById('date').value = formattedDate;
                     </script>
                 </div>
-                
+
                 <div class="form-group form-group-checkbox">
                     <label for="reportGain">Report Gain</label>
                     <input type="checkbox" id="reportGain" class="styled-checkbox">
@@ -116,6 +132,26 @@
                 <button type="submit" class="nav-button">Add Expense</button>
             </form>
             <div id="formMessage" class="form-message"></div>
+        </div>
+
+        <div class="table-controls">
+            <label for="showAllToggle">
+                <input type="checkbox" id="showAllToggle" class="styled-checkbox"> Show All Transactions
+            </label>
+            <div class="filter-row">
+                <select id="filterColumn">
+                    <option value="all">All Columns</option>
+                    <option value="name">Name</option>
+                    <option value="category">Category</option>
+                    <option value="tags">Tags</option>
+                    <option value="amount">Amount</option>
+                    <option value="date">Date</option>
+                </select>
+                <input type="text" id="filterInput" placeholder="Filter...">
+                <button id="filterClear" class="nav-button" type="button" title="Clear filter" style="display:none;">
+                    Clear
+                </button>
+            </div>
         </div>
 
         <div id="tableContainer">
@@ -144,6 +180,25 @@
         let selectedTags = new Set();
         let sortColumn = null;
         let sortDirection = null;
+        let filterText = '';
+        let filterColumn = 'all';
+
+        function filterExpenses(expenses) {
+            if (!filterText) return expenses;
+            return expenses.filter(expense => {
+                const name = expense.name.toLowerCase().includes(filterText);
+                const category = expense.category.toLowerCase().includes(filterText);
+                const tags = (expense.tags || []).some(t => t.toLowerCase().includes(filterText));
+                const amount = String(expense.amount).includes(filterText);
+                const date = formatDateFromUTC(expense.date).toLowerCase().includes(filterText);
+                if (filterColumn === 'name') return name;
+                if (filterColumn === 'category') return category;
+                if (filterColumn === 'tags') return tags;
+                if (filterColumn === 'amount') return amount;
+                if (filterColumn === 'date') return date;
+                return name || category || tags || amount || date;
+            });
+        }
 
         function sortExpenses(expenses) {
             if (!sortColumn || !sortDirection) return expenses;
@@ -189,8 +244,8 @@
 
         function createTable(expenses) {
             if (!expenses || expenses.length === 0) {
-                const message = document.getElementById('showAllToggle').checked ? 
-                                'No transactions found' : 
+                const message = document.getElementById('showAllToggle').checked ?
+                                'No transactions found' :
                                 'No expenses recorded for this month';
                 return `<div class="no-data">${message}</div>`;
             }
@@ -234,10 +289,10 @@
             const showAll = document.getElementById('showAllToggle').checked;
             document.querySelector('.month-navigation').style.display = showAll ? 'none' : 'flex';
 
-            expensesForTable = showAll
+            const base = showAll
                 ? allExpenses.slice().sort((a, b) => new Date(b.date) - new Date(a.date))
                 : getMonthExpenses(allExpenses);
-            expensesForTable = sortExpenses(expensesForTable);
+            expensesForTable = sortExpenses(filterExpenses(base));
 
             const tableContainer = document.getElementById('tableContainer');
             tableContainer.innerHTML = createTable(expensesForTable);
@@ -278,18 +333,18 @@
             document.getElementById('amount').value = Math.abs(amount);
             document.getElementById('reportGain').checked = isGain;
             renderSelectedTags(tags);
-            
+
             const localDate = new Date(date);
             const year = localDate.getFullYear();
             const month = String(localDate.getMonth() + 1).padStart(2, '0');
             const day = String(localDate.getDate()).padStart(2, '0');
             document.getElementById('date').value = `${year}-${month}-${day}`;
-            
+
             const form = document.getElementById('expenseForm');
             form.dataset.editId = id;
             const submitButton = form.querySelector('button[type="submit"]');
             submitButton.textContent = 'Update Expense';
-            
+
             form.scrollIntoView({ behavior: 'smooth' });
         }
 
@@ -327,7 +382,7 @@
                 const value = input.value.trim().toLowerCase();
                 dropdown.innerHTML = '';
                 const filteredTags = [...allTags].filter(tag => tag.toLowerCase().includes(value) && !selectedTags.has(tag));
-                
+
                 if(value && ![...allTags].map(t => t.toLowerCase()).includes(value)) {
                     const newItem = document.createElement('div');
                     newItem.textContent = `+ Create "${input.value.trim()}"`;
@@ -344,7 +399,7 @@
                         dropdown.appendChild(item);
                     });
                 }
-                
+
                 dropdown.style.display = 'block';
                 if (dropdown.children.length === 0) dropdown.style.display = 'none';
             });
@@ -372,17 +427,17 @@
                 if (!configResponse.ok) throw new Error('Failed to fetch configuration');
                 const config = await configResponse.json();
                 const categorySelect = document.getElementById('category');
-                categorySelect.innerHTML = config.categories.map(cat => 
+                categorySelect.innerHTML = config.categories.map(cat =>
                     `<option value="${cat}">${cat}</option>`
                 ).join('');
                 currentCurrency = config.currency;
                 startDate = config.startDate;
-                
+
                 const response = await fetch('/expenses');
                 if (!response.ok) throw new Error('Failed to fetch data');
                 const data = await response.json();
                 allExpenses = Array.isArray(data) ? data : (data && Array.isArray(data.expenses) ? data.expenses : []);
-                
+
                 allTags.clear();
                 allExpenses.forEach(exp => {
                     if (exp.tags) {
@@ -395,12 +450,28 @@
                 setupTagInput();
             } catch (error) {
                 console.error('Failed to initialize table:', error);
-                document.getElementById('tableContainer').innerHTML = 
+                document.getElementById('tableContainer').innerHTML =
                     '<div class="no-data">Failed to load expenses</div>';
             }
         }
 
         document.getElementById('showAllToggle').addEventListener('change', updateTable);
+
+        document.getElementById('filterInput').addEventListener('input', (e) => {
+            filterText = e.target.value.toLowerCase();
+            document.getElementById('filterClear').style.display = filterText ? '' : 'none';
+            updateTable();
+        });
+        document.getElementById('filterClear').addEventListener('click', () => {
+            document.getElementById('filterInput').value = '';
+            filterText = '';
+            document.getElementById('filterClear').style.display = 'none';
+            updateTable();
+        });
+        document.getElementById('filterColumn').addEventListener('change', (e) => {
+            filterColumn = e.target.value;
+            updateTable();
+        });
 
         document.getElementById('prevMonth').addEventListener('click', () => {
             currentDate.setDate(1);
@@ -522,7 +593,7 @@
                 e.target.value = '';
             }
         });
-        
+
         window.editExpenseByIndex = editExpenseByIndex;
     </script>
 </body>
