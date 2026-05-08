@@ -16,6 +16,25 @@
         })();
     </script>
     <title>ExpenseOwl Table</title>
+    <style>
+        .expense-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .expense-table th.sortable:hover {
+            background-color: var(--bg-secondary);
+        }
+        .expense-table th.sortable i {
+            margin-left: 4px;
+            opacity: 0.5;
+            font-size: 0.8em;
+        }
+        .expense-table th.sortable.asc i,
+        .expense-table th.sortable.desc i {
+            opacity: 1;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -123,6 +142,42 @@
         let startDate = 1;
         let allTags = new Set();
         let selectedTags = new Set();
+        let sortColumn = null;
+        let sortDirection = null;
+
+        function sortExpenses(expenses) {
+            if (!sortColumn || !sortDirection) return expenses;
+            return expenses.slice().sort((a, b) => {
+                let cmp;
+                if (sortColumn === 'name') cmp = a.name.localeCompare(b.name);
+                else if (sortColumn === 'category') cmp = a.category.localeCompare(b.category);
+                else if (sortColumn === 'amount') cmp = a.amount - b.amount;
+                else if (sortColumn === 'date') cmp = new Date(a.date) - new Date(b.date);
+                return sortDirection === 'desc' ? -cmp : cmp;
+            });
+        }
+
+        function handleSort(column) {
+            if (sortColumn !== column) {
+                sortColumn = column;
+                sortDirection = 'asc';
+            } else if (sortDirection === 'asc') {
+                sortDirection = 'desc';
+            } else {
+                sortColumn = null;
+                sortDirection = null;
+            }
+            updateTable();
+        }
+
+        function sortIcon(column) {
+            if (sortColumn !== column) return 'fa-sort';
+            return sortDirection === 'asc' ? 'fa-sort-up' : 'fa-sort-down';
+        }
+
+        function sortClass(column) {
+            return sortColumn === column ? sortDirection : '';
+        }
 
         function createTable(expenses) {
             if (!expenses || expenses.length === 0) {
@@ -136,11 +191,11 @@
                 <table class="expense-table">
                     <thead>
                         <tr>
-                            <th>Name</th>
-                            <th>Category</th>
+                            <th class="sortable ${sortClass('name')}" onclick="handleSort('name')">Name <i class="fa-solid ${sortIcon('name')}"></i></th>
+                            <th class="sortable ${sortClass('category')}" onclick="handleSort('category')">Category <i class="fa-solid ${sortIcon('category')}"></i></th>
                             ${hasTags ? '<th class="tags-column">Tags</th>' : ''}
-                            <th>Amount</th>
-                            <th class="date-header">Date</th>
+                            <th class="sortable ${sortClass('amount')}" onclick="handleSort('amount')">Amount <i class="fa-solid ${sortIcon('amount')}"></i></th>
+                            <th class="date-header sortable ${sortClass('date')}" onclick="handleSort('date')">Date <i class="fa-solid ${sortIcon('date')}"></i></th>
                             <th></th>
                         </tr>
                     </thead>
@@ -174,7 +229,8 @@
             expensesForTable = showAll
                 ? allExpenses.slice().sort((a, b) => new Date(b.date) - new Date(a.date))
                 : getMonthExpenses(allExpenses);
-            
+            expensesForTable = sortExpenses(expensesForTable);
+
             const tableContainer = document.getElementById('tableContainer');
             tableContainer.innerHTML = createTable(expensesForTable);
         }
