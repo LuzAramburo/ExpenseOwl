@@ -35,8 +35,9 @@
             opacity: 1;
         }
         .table-controls {
-            flex-direction: column;
+            flex-direction: row;
             gap: 0.75rem;
+            margin: 3rem 0 2rem 0;
         }
         .filter-row {
             display: flex;
@@ -135,9 +136,6 @@
         </div>
 
         <div class="table-controls">
-            <label for="showAllToggle">
-                <input type="checkbox" id="showAllToggle" class="styled-checkbox"> Show All Transactions
-            </label>
             <div class="filter-row">
                 <select id="filterColumn">
                     <option value="all">All Columns</option>
@@ -152,6 +150,9 @@
                     Clear
                 </button>
             </div>
+            <label for="showAllToggle">
+                <input type="checkbox" id="showAllToggle" class="styled-checkbox"> Show All Transactions
+            </label>
         </div>
 
         <div id="tableContainer">
