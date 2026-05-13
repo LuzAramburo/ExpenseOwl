@@ -100,7 +100,14 @@
                             document.getElementById('date').value = formattedDate;
                         </script>
                     </div>
-                    
+
+                    <div class="form-group">
+                        <label for="cardSelect">Credit Card</label>
+                        <select id="cardSelect">
+                            <option value="">No Card</option>
+                        </select>
+                    </div>
+
                     <div class="form-group form-group-checkbox">
                         <label for="reportGain">Report Gain</label>
                         <input type="checkbox" id="reportGain" class="styled-checkbox">
@@ -148,6 +155,7 @@
         let categoryColors = {};
         let allTags = new Set();
         let selectedTags = new Set();
+        let creditCards = [];
 
         function assignCategoryColors(categories) {
             categories.forEach((category, index) => {
@@ -331,22 +339,35 @@
             updateChartAndLegend();
         }
 
+        function populateCardSelect(selectedId) {
+            const select = document.getElementById('cardSelect');
+            const current = selectedId !== undefined ? selectedId : select.value;
+            select.innerHTML = '<option value="">No Card</option>' +
+                creditCards.map(c => `<option value="${c.id}" ${c.id === current ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('');
+        }
+
         async function initialize() {
             try {
-                const configResponse = await fetch('/config');
+                const [configResponse, expensesResponse, cardsResponse] = await Promise.all([
+                    fetch('/config'),
+                    fetch('/expenses'),
+                    fetch('/credit-cards')
+                ]);
                 if (!configResponse.ok) throw new Error('Failed to fetch configuration');
                 const config = await configResponse.json();
                 const categorySelect = document.getElementById('category');
-                categorySelect.innerHTML = config.categories.map(cat => 
+                categorySelect.innerHTML = config.categories.map(cat =>
                     `<option value="${cat}">${cat}</option>`
                 ).join('');
                 currentCurrency = config.currency;
                 startDate = config.startDate;
-                
-                const response = await fetch('/expenses');
-                if (!response.ok) throw new Error('Failed to fetch data');
-                const data = await response.json();
+
+                if (!expensesResponse.ok) throw new Error('Failed to fetch data');
+                const data = await expensesResponse.json();
                 allExpenses = Array.isArray(data) ? data : (data && Array.isArray(data.expenses) ? data.expenses : []);
+
+                creditCards = (cardsResponse.ok ? await cardsResponse.json() : null) || [];
+                populateCardSelect();
 
                 allTags.clear();
                 allExpenses.forEach(exp => {
@@ -354,7 +375,7 @@
                         exp.tags.forEach(tag => allTags.add(tag));
                     }
                 });
-                
+
                 const uniqueCategories = [...new Set(allExpenses.map(exp => exp.category))];
                 assignCategoryColors(uniqueCategories);
                 updateMonthDisplay();
@@ -490,7 +511,8 @@
                 category: document.getElementById('category').value,
                 amount: amount,
                 date: getISODateWithLocalTime(document.getElementById('date').value),
-                tags: Array.from(selectedTags)
+                tags: Array.from(selectedTags),
+                cardID: document.getElementById('cardSelect').value
             };
             try {
                 const response = await fetch('/expense', {
@@ -511,6 +533,7 @@
                     const month = String(today.getMonth() + 1).padStart(2, '0');
                     const day = String(today.getDate()).padStart(2, '0');
                     document.getElementById('date').value = `${year}-${month}-${day}`;
+                    document.getElementById('cardSelect').value = '';
                 } else {
                     const error = await response.json();
                     messageDiv.textContent = `Error: ${error.error || 'Failed to add expense'}`;

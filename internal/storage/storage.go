@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Storage interface for all storage types
@@ -22,6 +24,12 @@ type Storage interface {
 	UpdateCurrency(currency string) error
 	GetStartDate() (int, error)
 	UpdateStartDate(startDate int) error
+
+	// Credit Cards
+	GetCreditCards() ([]CreditCard, error)
+	AddCreditCard(card CreditCard) error
+	UpdateCreditCard(id string, card CreditCard) error
+	RemoveCreditCard(id string) error
 
 	// Recurring Expenses
 	GetRecurringExpenses() ([]RecurringExpense, error)
@@ -50,7 +58,29 @@ type Config struct {
 	Currency          string             `json:"currency"`
 	StartDate         int                `json:"startDate"`
 	RecurringExpenses []RecurringExpense `json:"recurringExpenses"`
+	CreditCards       []CreditCard       `json:"creditCards"`
 	// Tags              []string           `json:"tags"`
+}
+
+type CreditCard struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	CutoffDate int    `json:"cutoffDate"` // day of month (1-31)
+	DueDate    int    `json:"dueDate"`    // day of month (1-31)
+}
+
+func (c *CreditCard) Validate() error {
+	c.Name = SanitizeString(c.Name)
+	if c.Name == "" {
+		return fmt.Errorf("credit card 'name' cannot be empty")
+	}
+	if c.CutoffDate < 1 || c.CutoffDate > 31 {
+		return fmt.Errorf("credit card 'cutoffDate' must be between 1 and 31")
+	}
+	if c.DueDate < 1 || c.DueDate > 31 {
+		return fmt.Errorf("credit card 'dueDate' must be between 1 and 31")
+	}
+	return nil
 }
 
 type RecurringExpense struct {
@@ -60,6 +90,7 @@ type RecurringExpense struct {
 	Currency    string    `json:"currency"`
 	Tags        []string  `json:"tags"`
 	Category    string    `json:"category"`
+	CardID      string    `json:"cardID"`
 	StartDate   time.Time `json:"startDate"`   // date of the first occurrence
 	Interval    string    `json:"interval"`    // daily, weekly, monthly, yearly
 	Occurrences int       `json:"occurrences"` // 0 for 3000 occurrences (heuristic)
@@ -85,6 +116,7 @@ type SystemConfig struct {
 type Expense struct {
 	ID          string    `json:"id"`
 	RecurringID string    `json:"recurringID"`
+	CardID      string    `json:"cardID"`
 	Name        string    `json:"name"`
 	Tags        []string  `json:"tags"`
 	Category    string    `json:"category"`
@@ -99,6 +131,7 @@ func (c *Config) SetBaseConfig() {
 	c.StartDate = 1
 	// c.Tags = []string{}
 	c.RecurringExpenses = []RecurringExpense{}
+	c.CreditCards = []CreditCard{}
 }
 
 func (c *SystemConfig) SetStorageConfig() {
@@ -147,6 +180,10 @@ func InitializeStorage() (Storage, error) {
 		return InitializePostgresStore(baseConfig)
 	}
 	return nil, fmt.Errorf("invalid data store: %s", baseConfig.StorageType)
+}
+
+func NewID() string {
+	return uuid.New().String()
 }
 
 var REInvalidChars *regexp.Regexp = regexp.MustCompile(`[^\p{L}\p{N}\s.,\-'_!"]`)

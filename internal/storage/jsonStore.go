@@ -197,6 +197,73 @@ func (s *jsonStore) UpdateStartDate(startDate int) error {
 	return s.writeConfigFile(s.configPath, data)
 }
 
+// Credit Cards
+
+func (s *jsonStore) GetCreditCards() ([]CreditCard, error) {
+	config, err := s.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	if config.CreditCards == nil {
+		return []CreditCard{}, nil
+	}
+	return config.CreditCards, nil
+}
+
+func (s *jsonStore) AddCreditCard(card CreditCard) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := s.readConfigFile(s.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %v", err)
+	}
+	if card.ID == "" {
+		card.ID = uuid.New().String()
+	}
+	data.CreditCards = append(data.CreditCards, card)
+	return s.writeConfigFile(s.configPath, data)
+}
+
+func (s *jsonStore) UpdateCreditCard(id string, card CreditCard) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := s.readConfigFile(s.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %v", err)
+	}
+	for i, c := range data.CreditCards {
+		if c.ID == id {
+			card.ID = id
+			data.CreditCards[i] = card
+			return s.writeConfigFile(s.configPath, data)
+		}
+	}
+	return fmt.Errorf("credit card with ID %s not found", id)
+}
+
+func (s *jsonStore) RemoveCreditCard(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := s.readConfigFile(s.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %v", err)
+	}
+	var updated []CreditCard
+	found := false
+	for _, c := range data.CreditCards {
+		if c.ID == id {
+			found = true
+		} else {
+			updated = append(updated, c)
+		}
+	}
+	if !found {
+		return fmt.Errorf("credit card with ID %s not found", id)
+	}
+	data.CreditCards = updated
+	return s.writeConfigFile(s.configPath, data)
+}
+
 func (s *jsonStore) GetRecurringExpenses() ([]RecurringExpense, error) {
 	config, err := s.GetConfig()
 	if err != nil {

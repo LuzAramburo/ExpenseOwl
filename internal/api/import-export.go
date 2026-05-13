@@ -31,7 +31,7 @@ func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	defer writer.Flush()
 
 	// Write header
-	headers := []string{"ID", "Name", "Category", "Amount", "Date", "Tags"}
+	headers := []string{"ID", "Name", "Category", "Amount", "Date", "Tags", "CardID"}
 	if err := writer.Write(headers); err != nil {
 		log.Printf("API ERROR: Failed to write CSV header: %v\n", err)
 		return
@@ -47,6 +47,7 @@ func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 			strconv.FormatFloat(expense.Amount, 'f', 2, 64),
 			expense.Date.Format(time.RFC3339),
 			strings.Join(expense.Tags, ","),
+			expense.CardID,
 		}
 		if err := writer.Write(record); err != nil {
 			log.Printf("API ERROR: Failed to write CSV record for expense ID %s: %v\n", expense.ID, err)
@@ -100,6 +101,7 @@ func (h *Handler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	idIdx, idExists := colMap["id"]
 	tagsIdx, tagsExists := colMap["tags"]
 	currencyIdx, currencyExists := colMap["currency"]
+	cardIDIdx, cardIDExists := colMap["cardid"]
 
 	currentCategories, err := h.storage.GetCategories()
 	if err != nil {
@@ -177,6 +179,10 @@ func (h *Handler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		var cardID string
+		if cardIDExists {
+			cardID = strings.TrimSpace(record[cardIDIdx])
+		}
 		expense := storage.Expense{
 			Name:     strings.TrimSpace(record[colMap["name"]]),
 			Category: category,
@@ -184,6 +190,7 @@ func (h *Handler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 			Currency: localCurrency,
 			Date:     date,
 			Tags:     tags,
+			CardID:   cardID,
 		}
 		if err := expense.Validate(); err != nil {
 			log.Printf("Warning: Skipping row %d due to validation error: %v\n", i+2, err)

@@ -125,6 +125,13 @@
                     </script>
                 </div>
 
+                <div class="form-group">
+                    <label for="cardSelect">Credit Card</label>
+                    <select id="cardSelect">
+                        <option value="">No Card</option>
+                    </select>
+                </div>
+
                 <div class="form-group form-group-checkbox">
                     <label for="reportGain">Report Gain</label>
                     <input type="checkbox" id="reportGain" class="styled-checkbox">
@@ -144,6 +151,7 @@
                     <option value="tags">Tags</option>
                     <option value="amount">Amount</option>
                     <option value="date">Date</option>
+                    <option value="card">Card</option>
                 </select>
                 <input type="text" id="filterInput" placeholder="Filter...">
                 <button id="filterClear" class="nav-button" type="button" title="Clear filter" style="display:none;">
@@ -183,6 +191,8 @@
         let sortDirection = null;
         let filterText = '';
         let filterColumn = 'all';
+        let creditCards = [];
+        let cardMap = {};
 
         function filterExpenses(expenses) {
             if (!filterText) return expenses;
@@ -192,13 +202,37 @@
                 const tags = (expense.tags || []).some(t => t.toLowerCase().includes(filterText));
                 const amount = String(expense.amount).includes(filterText);
                 const date = formatDateFromUTC(expense.date).toLowerCase().includes(filterText);
+                const card = expense.cardID ? (cardMap[expense.cardID]?.name || '').toLowerCase().includes(filterText) : false;
                 if (filterColumn === 'name') return name;
                 if (filterColumn === 'category') return category;
                 if (filterColumn === 'tags') return tags;
                 if (filterColumn === 'amount') return amount;
                 if (filterColumn === 'date') return date;
-                return name || category || tags || amount || date;
+                if (filterColumn === 'card') return card;
+                return name || category || tags || amount || date || card;
             });
+        }
+
+        function calculateCardDueDate(expenseDate, card) {
+            const d = new Date(expenseDate);
+            let closingYear = d.getFullYear();
+            let closingMonth = d.getMonth();
+            if (d.getDate() > card.cutoffDate) {
+                closingMonth++;
+                if (closingMonth > 11) { closingMonth = 0; closingYear++; }
+            }
+            let dueMonth = closingMonth + 1;
+            let dueYear = closingYear;
+            if (dueMonth > 11) { dueMonth = 0; dueYear++; }
+            const lastDay = new Date(dueYear, dueMonth + 1, 0).getDate();
+            return new Date(dueYear, dueMonth, Math.min(card.dueDate, lastDay));
+        }
+
+        function populateCardSelect(selectedId) {
+            const select = document.getElementById('cardSelect');
+            const current = selectedId !== undefined ? selectedId : select.value;
+            select.innerHTML = '<option value="">No Card</option>' +
+                creditCards.map(c => `<option value="${c.id}" ${c.id === current ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('');
         }
 
         function sortExpenses(expenses) {
@@ -251,6 +285,7 @@
                 return `<div class="no-data">${message}</div>`;
             }
             const hasTags = expenses.some(exp => exp.tags && exp.tags.length > 0);
+            const hasCards = expenses.some(exp => exp.cardID && cardMap[exp.cardID]);
             return `
                 <table class="expense-table">
                     <thead>
@@ -260,17 +295,22 @@
                             ${hasTags ? `<th class="tags-column sortable ${sortClass('tags')}" onclick="handleSort('tags')">Tags <i class="fa-solid ${sortIcon('tags')}"></i></th>` : ''}
                             <th class="sortable ${sortClass('amount')}" onclick="handleSort('amount')">Amount <i class="fa-solid ${sortIcon('amount')}"></i></th>
                             <th class="date-header sortable ${sortClass('date')}" onclick="handleSort('date')">Date <i class="fa-solid ${sortIcon('date')}"></i></th>
+                            ${hasCards ? '<th>Card</th><th>Due Date</th>' : ''}
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${expenses.map((expense, index) => `
+                        ${expenses.map((expense, index) => {
+                            const card = expense.cardID ? cardMap[expense.cardID] : null;
+                            const dueDate = card ? calculateCardDueDate(expense.date, card).toLocaleDateString() : '';
+                            return `
                             <tr>
                                 <td>${escapeHTML(expense.name)}</td>
                                 <td>${escapeHTML(expense.category)}</td>
                                 ${hasTags ? `<td class="tags-column">${(expense.tags || []).map(escapeHTML).join(', ')}</td>` : ''}
                                 <td class="amount">${formatCurrency(expense.amount)}</td>
                                 <td class="date-column">${formatDateFromUTC(expense.date)}</td>
+                                ${hasCards ? `<td>${card ? escapeHTML(card.name) : ''}</td><td>${dueDate}</td>` : ''}
                                 <td>
                                     <button class="edit-button" onclick="editExpenseByIndex(${index})">
                                         <i class="fa-solid fa-pen-to-square"></i>
@@ -279,8 +319,8 @@
                                         <i class="fa-solid fa-trash-can"></i>
                                     </button>
                                 </td>
-                            </tr>
-                        `).join('')}
+                            </tr>`;
+                        }).join('')}
                     </tbody>
                 </table>
             `;
@@ -302,7 +342,7 @@
         function editExpenseByIndex(index) {
             const expense = expensesForTable[index];
             if (expense) {
-                editExpense(expense.id, expense.name, expense.category, expense.amount, (expense.tags || []), expense.date);
+                editExpense(expense.id, expense.name, expense.category, expense.amount, (expense.tags || []), expense.date, expense.cardID || '');
             }
         }
 
@@ -327,13 +367,14 @@
             });
         }
 
-        function editExpense(id, name, category, amount, tags, date) {
+        function editExpense(id, name, category, amount, tags, date, cardID) {
             const isGain = amount > 0;
             document.getElementById('name').value = name;
             document.getElementById('category').value = category;
             document.getElementById('amount').value = Math.abs(amount);
             document.getElementById('reportGain').checked = isGain;
             renderSelectedTags(tags);
+            populateCardSelect(cardID || '');
 
             const localDate = new Date(date);
             const year = localDate.getFullYear();
@@ -424,7 +465,11 @@
 
         async function initialize() {
             try {
-                const configResponse = await fetch('/config');
+                const [configResponse, expensesResponse, cardsResponse] = await Promise.all([
+                    fetch('/config'),
+                    fetch('/expenses'),
+                    fetch('/credit-cards')
+                ]);
                 if (!configResponse.ok) throw new Error('Failed to fetch configuration');
                 const config = await configResponse.json();
                 const categorySelect = document.getElementById('category');
@@ -434,10 +479,14 @@
                 currentCurrency = config.currency;
                 startDate = config.startDate;
 
-                const response = await fetch('/expenses');
-                if (!response.ok) throw new Error('Failed to fetch data');
-                const data = await response.json();
+                if (!expensesResponse.ok) throw new Error('Failed to fetch data');
+                const data = await expensesResponse.json();
                 allExpenses = Array.isArray(data) ? data : (data && Array.isArray(data.expenses) ? data.expenses : []);
+
+                creditCards = (cardsResponse.ok ? await cardsResponse.json() : null) || [];
+                cardMap = {};
+                creditCards.forEach(c => cardMap[c.id] = c);
+                populateCardSelect();
 
                 allTags.clear();
                 allExpenses.forEach(exp => {
@@ -547,7 +596,8 @@
                 category: document.getElementById('category').value,
                 amount: amount,
                 date: getISODateWithLocalTime(document.getElementById('date').value),
-                tags: Array.from(selectedTags)
+                tags: Array.from(selectedTags),
+                cardID: document.getElementById('cardSelect').value
             };
             try {
                 const url = editId ? `/expense/edit?id=${editId}` : '/expense';
@@ -563,6 +613,7 @@
                     form.reset();
                     document.getElementById('selected-tags').innerHTML = '';
                     selectedTags.clear();
+                    document.getElementById('cardSelect').value = '';
                     delete form.dataset.editId;
                     form.querySelector('button[type="submit"]').textContent = 'Add Expense';
                     await initialize();

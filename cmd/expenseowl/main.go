@@ -76,6 +76,12 @@ func runServer(port int) {
 	http.HandleFunc("/expense/delete", handler.DeleteExpense)           // DELETE for single
 	http.HandleFunc("/expenses/delete", handler.DeleteMultipleExpenses) // DELETE for multiple
 
+	// Credit Cards
+	http.HandleFunc("/credit-cards", handler.GetCreditCards)            // GET all
+	http.HandleFunc("/credit-card", handler.AddCreditCard)              // PUT for add
+	http.HandleFunc("/credit-card/edit", handler.EditCreditCard)        // PUT for edit
+	http.HandleFunc("/credit-card/delete", handler.DeleteCreditCard)    // DELETE
+
 	// Recurring Expenses
 	http.HandleFunc("/recurring-expense", handler.AddRecurringExpense)           // PUT for add
 	http.HandleFunc("/recurring-expenses", handler.GetRecurringExpenses)         // GET all
