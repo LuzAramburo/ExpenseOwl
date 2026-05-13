@@ -113,7 +113,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="date">Date</label>
+                    <label for="date">Purchase Date</label>
                     <input type="date" id="date" required>
                     <script>
                         const today = new Date();
@@ -152,6 +152,7 @@
                     <option value="amount">Amount</option>
                     <option value="date">Date</option>
                     <option value="card">Card</option>
+                    <option value="purchasedate">Purchase Date</option>
                 </select>
                 <input type="text" id="filterInput" placeholder="Filter...">
                 <button id="filterClear" class="nav-button" type="button" title="Clear filter" style="display:none;">
@@ -201,31 +202,20 @@
                 const category = expense.category.toLowerCase().includes(filterText);
                 const tags = (expense.tags || []).some(t => t.toLowerCase().includes(filterText));
                 const amount = String(expense.amount).includes(filterText);
-                const date = formatDateFromUTC(expense.date).toLowerCase().includes(filterText);
+                const date = formatDateShort(expense.date).toLowerCase().includes(filterText);
                 const card = expense.cardID ? (cardMap[expense.cardID]?.name || '').toLowerCase().includes(filterText) : false;
+                const purchaseDateStr = (expense.purchaseDate && !new Date(expense.purchaseDate).toISOString().startsWith('0001'))
+                    ? formatDateShort(expense.purchaseDate).toLowerCase() : '';
+                const purchasedate = purchaseDateStr.includes(filterText);
                 if (filterColumn === 'name') return name;
                 if (filterColumn === 'category') return category;
                 if (filterColumn === 'tags') return tags;
                 if (filterColumn === 'amount') return amount;
                 if (filterColumn === 'date') return date;
                 if (filterColumn === 'card') return card;
-                return name || category || tags || amount || date || card;
+                if (filterColumn === 'purchasedate') return purchasedate;
+                return name || category || tags || amount || date || card || purchasedate;
             });
-        }
-
-        function calculateCardDueDate(expenseDate, card) {
-            const d = new Date(expenseDate);
-            let closingYear = d.getFullYear();
-            let closingMonth = d.getMonth();
-            if (d.getDate() > card.cutoffDate) {
-                closingMonth++;
-                if (closingMonth > 11) { closingMonth = 0; closingYear++; }
-            }
-            let dueMonth = closingMonth + 1;
-            let dueYear = closingYear;
-            if (dueMonth > 11) { dueMonth = 0; dueYear++; }
-            const lastDay = new Date(dueYear, dueMonth + 1, 0).getDate();
-            return new Date(dueYear, dueMonth, Math.min(card.dueDate, lastDay));
         }
 
         function populateCardSelect(selectedId) {
@@ -286,6 +276,7 @@
             }
             const hasTags = expenses.some(exp => exp.tags && exp.tags.length > 0);
             const hasCards = expenses.some(exp => exp.cardID && cardMap[exp.cardID]);
+            const hasPurchaseDates = expenses.some(e => e.cardID && e.purchaseDate && !new Date(e.purchaseDate).toISOString().startsWith('0001'));
             return `
                 <table class="expense-table">
                     <thead>
@@ -295,22 +286,24 @@
                             ${hasTags ? `<th class="tags-column sortable ${sortClass('tags')}" onclick="handleSort('tags')">Tags <i class="fa-solid ${sortIcon('tags')}"></i></th>` : ''}
                             <th class="sortable ${sortClass('amount')}" onclick="handleSort('amount')">Amount <i class="fa-solid ${sortIcon('amount')}"></i></th>
                             <th class="date-header sortable ${sortClass('date')}" onclick="handleSort('date')">Date <i class="fa-solid ${sortIcon('date')}"></i></th>
-                            ${hasCards ? '<th>Card</th><th>Due Date</th>' : ''}
+                            ${hasCards ? '<th>Card</th>' : ''}
+                            ${hasPurchaseDates ? '<th>Purchase Date</th>' : ''}
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
                         ${expenses.map((expense, index) => {
                             const card = expense.cardID ? cardMap[expense.cardID] : null;
-                            const dueDate = card ? calculateCardDueDate(expense.date, card).toLocaleDateString() : '';
+                            const purchaseDateValid = expense.purchaseDate && !new Date(expense.purchaseDate).toISOString().startsWith('0001');
                             return `
                             <tr>
                                 <td>${escapeHTML(expense.name)}</td>
                                 <td>${escapeHTML(expense.category)}</td>
                                 ${hasTags ? `<td class="tags-column">${(expense.tags || []).map(escapeHTML).join(', ')}</td>` : ''}
                                 <td class="amount">${formatCurrency(expense.amount)}</td>
-                                <td class="date-column">${formatDateFromUTC(expense.date)}</td>
-                                ${hasCards ? `<td>${card ? escapeHTML(card.name) : ''}</td><td>${dueDate}</td>` : ''}
+                                <td class="date-column">${formatDateShort(expense.date)}</td>
+                                ${hasCards ? `<td>${card ? escapeHTML(card.name) : ''}</td>` : ''}
+                                ${hasPurchaseDates ? `<td>${purchaseDateValid ? formatDateShort(expense.purchaseDate) : ''}</td>` : ''}
                                 <td>
                                     <button class="edit-button" onclick="editExpenseByIndex(${index})">
                                         <i class="fa-solid fa-pen-to-square"></i>
@@ -342,7 +335,7 @@
         function editExpenseByIndex(index) {
             const expense = expensesForTable[index];
             if (expense) {
-                editExpense(expense.id, expense.name, expense.category, expense.amount, (expense.tags || []), expense.date, expense.cardID || '');
+                editExpense(expense.id, expense.name, expense.category, expense.amount, (expense.tags || []), expense.date, expense.cardID || '', expense.purchaseDate || '');
             }
         }
 
@@ -367,7 +360,7 @@
             });
         }
 
-        function editExpense(id, name, category, amount, tags, date, cardID) {
+        function editExpense(id, name, category, amount, tags, date, cardID, purchaseDate) {
             const isGain = amount > 0;
             document.getElementById('name').value = name;
             document.getElementById('category').value = category;
@@ -376,7 +369,9 @@
             renderSelectedTags(tags);
             populateCardSelect(cardID || '');
 
-            const localDate = new Date(date);
+            const purchaseDateValid = purchaseDate && !new Date(purchaseDate).toISOString().startsWith('0001');
+            const dateToShow = (cardID && purchaseDateValid) ? purchaseDate : date;
+            const localDate = new Date(dateToShow);
             const year = localDate.getFullYear();
             const month = String(localDate.getMonth() + 1).padStart(2, '0');
             const day = String(localDate.getDate()).padStart(2, '0');
@@ -591,13 +586,26 @@
                 amount *= -1;
             }
 
+            const rawDate = getISODateWithLocalTime(document.getElementById('date').value);
+            const selectedCardId = document.getElementById('cardSelect').value;
+            const selectedCard = selectedCardId ? creditCards.find(c => c.id === selectedCardId) : null;
+            let submittedDate = rawDate;
+            let purchaseDate = '';
+            if (selectedCard) {
+                const due = calculateCardDueDate(rawDate, selectedCard);
+                const now = new Date();
+                submittedDate = new Date(due.getFullYear(), due.getMonth(), due.getDate(),
+                    now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
+                purchaseDate = rawDate;
+            }
             const formData = {
                 name: document.getElementById('name').value,
                 category: document.getElementById('category').value,
                 amount: amount,
-                date: getISODateWithLocalTime(document.getElementById('date').value),
+                date: submittedDate,
+                purchaseDate: purchaseDate,
                 tags: Array.from(selectedTags),
-                cardID: document.getElementById('cardSelect').value
+                cardID: selectedCardId
             };
             try {
                 const url = editId ? `/expense/edit?id=${editId}` : '/expense';

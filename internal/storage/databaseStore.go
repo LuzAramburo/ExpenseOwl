@@ -92,6 +92,7 @@ func createTables(db *sql.DB) error {
 	migrations := []string{
 		`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS card_id VARCHAR(36)`,
 		`ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS card_id VARCHAR(36)`,
+		`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS purchase_date TIMESTAMPTZ`,
 	}
 	for _, query := range migrations {
 		if _, err := db.Exec(query); err != nil {
@@ -225,7 +226,8 @@ func scanExpense(scanner interface{ Scan(...any) error }) (Expense, error) {
 	var tagsStr sql.NullString
 	var recurringID sql.NullString
 	var cardID sql.NullString
-	err := scanner.Scan(&expense.ID, &recurringID, &expense.Name, &expense.Category, &expense.Amount, &expense.Date, &tagsStr, &cardID)
+	var purchaseDate sql.NullTime
+	err := scanner.Scan(&expense.ID, &recurringID, &expense.Name, &expense.Category, &expense.Amount, &expense.Date, &tagsStr, &cardID, &purchaseDate)
 	if err != nil {
 		return Expense{}, err
 	}
@@ -234,6 +236,9 @@ func scanExpense(scanner interface{ Scan(...any) error }) (Expense, error) {
 	}
 	if cardID.Valid {
 		expense.CardID = cardID.String
+	}
+	if purchaseDate.Valid {
+		expense.PurchaseDate = purchaseDate.Time
 	}
 	if tagsStr.Valid && tagsStr.String != "" {
 		if err := json.Unmarshal([]byte(tagsStr.String), &expense.Tags); err != nil {
@@ -244,7 +249,7 @@ func scanExpense(scanner interface{ Scan(...any) error }) (Expense, error) {
 }
 
 func (s *databaseStore) GetAllExpenses() ([]Expense, error) {
-	query := `SELECT id, recurring_id, name, category, amount, date, tags, card_id FROM expenses ORDER BY date DESC`
+	query := `SELECT id, recurring_id, name, category, amount, date, tags, card_id, purchase_date FROM expenses ORDER BY date DESC`
 	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query expenses: %v", err)
@@ -263,7 +268,7 @@ func (s *databaseStore) GetAllExpenses() ([]Expense, error) {
 }
 
 func (s *databaseStore) GetExpense(id string) (Expense, error) {
-	query := `SELECT id, recurring_id, name, category, amount, date, tags, card_id FROM expenses WHERE id = $1`
+	query := `SELECT id, recurring_id, name, category, amount, date, tags, card_id, purchase_date FROM expenses WHERE id = $1`
 	expense, err := scanExpense(s.db.QueryRow(query, id))
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -289,10 +294,10 @@ func (s *databaseStore) AddExpense(expense Expense) error {
 		return err
 	}
 	query := `
-		INSERT INTO expenses (id, recurring_id, name, category, amount, currency, date, tags, card_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO expenses (id, recurring_id, name, category, amount, currency, date, tags, card_id, purchase_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
-	_, err = s.db.Exec(query, expense.ID, expense.RecurringID, expense.Name, expense.Category, expense.Amount, expense.Currency, expense.Date, string(tagsJSON), nullableString(expense.CardID))
+	_, err = s.db.Exec(query, expense.ID, expense.RecurringID, expense.Name, expense.Category, expense.Amount, expense.Currency, expense.Date, string(tagsJSON), nullableString(expense.CardID), nullableTime(expense.PurchaseDate))
 	return err
 }
 
@@ -307,10 +312,10 @@ func (s *databaseStore) UpdateExpense(id string, expense Expense) error {
 	}
 	query := `
 		UPDATE expenses
-		SET name = $1, category = $2, amount = $3, currency = $4, date = $5, tags = $6, recurring_id = $7, card_id = $8
-		WHERE id = $9
+		SET name = $1, category = $2, amount = $3, currency = $4, date = $5, tags = $6, recurring_id = $7, card_id = $8, purchase_date = $9
+		WHERE id = $10
 	`
-	result, err := s.db.Exec(query, expense.Name, expense.Category, expense.Amount, expense.Currency, expense.Date, string(tagsJSON), expense.RecurringID, nullableString(expense.CardID), id)
+	result, err := s.db.Exec(query, expense.Name, expense.Category, expense.Amount, expense.Currency, expense.Date, string(tagsJSON), expense.RecurringID, nullableString(expense.CardID), nullableTime(expense.PurchaseDate), id)
 	if err != nil {
 		return fmt.Errorf("failed to update expense: %v", err)
 	}
@@ -439,14 +444,14 @@ func (s *databaseStore) AddRecurringExpense(recurringExpense RecurringExpense) e
 
 	expensesToAdd := generateExpensesFromRecurring(recurringExpense, false)
 	if len(expensesToAdd) > 0 {
-		stmt, err := tx.Prepare(pq.CopyIn("expenses", "id", "recurring_id", "name", "category", "amount", "currency", "date", "tags", "card_id"))
+		stmt, err := tx.Prepare(pq.CopyIn("expenses", "id", "recurring_id", "name", "category", "amount", "currency", "date", "tags", "card_id", "purchase_date"))
 		if err != nil {
 			return fmt.Errorf("failed to prepare copy in: %v", err)
 		}
 		defer stmt.Close()
 		for _, exp := range expensesToAdd {
 			expTagsJSON, _ := json.Marshal(exp.Tags)
-			_, err = stmt.Exec(exp.ID, exp.RecurringID, exp.Name, exp.Category, exp.Amount, exp.Currency, exp.Date, string(expTagsJSON), nullableString(exp.CardID))
+			_, err = stmt.Exec(exp.ID, exp.RecurringID, exp.Name, exp.Category, exp.Amount, exp.Currency, exp.Date, string(expTagsJSON), nullableString(exp.CardID), nil)
 			if err != nil {
 				return fmt.Errorf("failed to execute copy in: %v", err)
 			}
@@ -497,14 +502,14 @@ func (s *databaseStore) UpdateRecurringExpense(id string, recurringExpense Recur
 
 	expensesToAdd := generateExpensesFromRecurring(recurringExpense, !updateAll)
 	if len(expensesToAdd) > 0 {
-		stmt, err := tx.Prepare(pq.CopyIn("expenses", "id", "recurring_id", "name", "category", "amount", "currency", "date", "tags", "card_id"))
+		stmt, err := tx.Prepare(pq.CopyIn("expenses", "id", "recurring_id", "name", "category", "amount", "currency", "date", "tags", "card_id", "purchase_date"))
 		if err != nil {
 			return fmt.Errorf("failed to prepare copy in for update: %v", err)
 		}
 		defer stmt.Close()
 		for _, exp := range expensesToAdd {
 			expTagsJSON, _ := json.Marshal(exp.Tags)
-			_, err = stmt.Exec(exp.ID, exp.RecurringID, exp.Name, exp.Category, exp.Amount, exp.Currency, exp.Date, string(expTagsJSON), nullableString(exp.CardID))
+			_, err = stmt.Exec(exp.ID, exp.RecurringID, exp.Name, exp.Category, exp.Amount, exp.Currency, exp.Date, string(expTagsJSON), nullableString(exp.CardID), nil)
 			if err != nil {
 				return fmt.Errorf("failed to execute copy in for update: %v", err)
 			}
@@ -550,6 +555,13 @@ func nullableString(s string) interface{} {
 		return nil
 	}
 	return s
+}
+
+func nullableTime(t time.Time) interface{} {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }
 
 // Credit Cards

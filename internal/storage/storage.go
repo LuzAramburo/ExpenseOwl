@@ -114,15 +114,16 @@ type SystemConfig struct {
 
 // expense struct
 type Expense struct {
-	ID          string    `json:"id"`
-	RecurringID string    `json:"recurringID"`
-	CardID      string    `json:"cardID"`
-	Name        string    `json:"name"`
-	Tags        []string  `json:"tags"`
-	Category    string    `json:"category"`
-	Amount      float64   `json:"amount"`
-	Currency    string    `json:"currency"`
-	Date        time.Time `json:"date"`
+	ID           string    `json:"id"`
+	RecurringID  string    `json:"recurringID"`
+	CardID       string    `json:"cardID"`
+	PurchaseDate time.Time `json:"purchaseDate"`
+	Name         string    `json:"name"`
+	Tags         []string  `json:"tags"`
+	Category     string    `json:"category"`
+	Amount       float64   `json:"amount"`
+	Currency     string    `json:"currency"`
+	Date         time.Time `json:"date"`
 }
 
 func (c *Config) SetBaseConfig() {
