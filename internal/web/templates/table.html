@@ -241,6 +241,19 @@
                     else if (!bTag) return -1;
                     else cmp = aTag.localeCompare(bTag);
                 }
+                else if (sortColumn === 'card') {
+                    const aCard = (a.cardID && cardMap[a.cardID]?.name) || '';
+                    const bCard = (b.cardID && cardMap[b.cardID]?.name) || '';
+                    cmp = aCard.localeCompare(bCard);
+                }
+                else if (sortColumn === 'purchasedate') {
+                    const aValid = a.purchaseDate && !new Date(a.purchaseDate).toISOString().startsWith('0001');
+                    const bValid = b.purchaseDate && !new Date(b.purchaseDate).toISOString().startsWith('0001');
+                    if (!aValid && !bValid) cmp = 0;
+                    else if (!aValid) return 1;
+                    else if (!bValid) return -1;
+                    else cmp = new Date(a.purchaseDate) - new Date(b.purchaseDate);
+                }
                 return sortDirection === 'desc' ? -cmp : cmp;
             });
         }
@@ -286,8 +299,8 @@
                             ${hasTags ? `<th class="tags-column sortable ${sortClass('tags')}" onclick="handleSort('tags')">Tags <i class="fa-solid ${sortIcon('tags')}"></i></th>` : ''}
                             <th class="sortable ${sortClass('amount')}" onclick="handleSort('amount')">Amount <i class="fa-solid ${sortIcon('amount')}"></i></th>
                             <th class="date-header sortable ${sortClass('date')}" onclick="handleSort('date')">Date <i class="fa-solid ${sortIcon('date')}"></i></th>
-                            ${hasCards ? '<th>Card</th>' : ''}
-                            ${hasPurchaseDates ? '<th>Purchase Date</th>' : ''}
+                            ${hasCards ? `<th class="sortable ${sortClass('card')}" onclick="handleSort('card')">Card <i class="fa-solid ${sortIcon('card')}"></i></th>` : ''}
+                            ${hasPurchaseDates ? `<th class="sortable ${sortClass('purchasedate')}" onclick="handleSort('purchasedate')">Purchase Date <i class="fa-solid ${sortIcon('purchasedate')}"></i></th>` : ''}
                             <th></th>
                         </tr>
                     </thead>
