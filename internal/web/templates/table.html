@@ -194,6 +194,7 @@
         let filterColumn = 'all';
         let creditCards = [];
         let cardMap = {};
+        let recurringMap = {};
 
         function filterExpenses(expenses) {
             if (!filterText) return expenses;
@@ -290,6 +291,27 @@
             const hasTags = expenses.some(exp => exp.tags && exp.tags.length > 0);
             const hasCards = expenses.some(exp => exp.cardID && cardMap[exp.cardID]);
             const hasPurchaseDates = expenses.some(e => e.cardID && e.purchaseDate && !new Date(e.purchaseDate).toISOString().startsWith('0001'));
+            const hasRecurringWithCard = expenses.some(e => e.cardID && e.recurringID && recurringMap[e.recurringID]);
+            const occurrenceMap = {};
+            if (hasRecurringWithCard) {
+                const groups = {};
+                allExpenses.forEach(e => {
+                    if (e.recurringID && e.cardID) {
+                        if (!groups[e.recurringID]) groups[e.recurringID] = [];
+                        groups[e.recurringID].push(e);
+                    }
+                });
+                Object.entries(groups).forEach(([rid, group]) => {
+                    group.sort((a, b) => {
+                        const aD = (a.purchaseDate && !new Date(a.purchaseDate).toISOString().startsWith('0001')) ? a.purchaseDate : a.date;
+                        const bD = (b.purchaseDate && !new Date(b.purchaseDate).toISOString().startsWith('0001')) ? b.purchaseDate : b.date;
+                        return new Date(aD) - new Date(bD);
+                    });
+                    const rec = recurringMap[rid];
+                    const total = rec ? (rec.occurrences > 0 ? rec.occurrences : '∞') : '∞';
+                    group.forEach((e, i) => { occurrenceMap[e.id] = `${i + 1}/${total}`; });
+                });
+            }
             return `
                 <table class="expense-table">
                     <thead>
@@ -301,6 +323,7 @@
                             <th class="date-header sortable ${sortClass('date')}" onclick="handleSort('date')">Date <i class="fa-solid ${sortIcon('date')}"></i></th>
                             ${hasCards ? `<th class="sortable ${sortClass('card')}" onclick="handleSort('card')">Card <i class="fa-solid ${sortIcon('card')}"></i></th>` : ''}
                             ${hasPurchaseDates ? `<th class="sortable ${sortClass('purchasedate')}" onclick="handleSort('purchasedate')">Purchase Date <i class="fa-solid ${sortIcon('purchasedate')}"></i></th>` : ''}
+                            ${hasRecurringWithCard ? '<th>Interval</th>' : ''}
                             <th></th>
                         </tr>
                     </thead>
@@ -317,6 +340,7 @@
                                 <td class="date-column">${formatDateShort(expense.date)}</td>
                                 ${hasCards ? `<td>${card ? escapeHTML(card.name) : ''}</td>` : ''}
                                 ${hasPurchaseDates ? `<td>${purchaseDateValid ? formatDateShort(expense.purchaseDate) : ''}</td>` : ''}
+                                ${hasRecurringWithCard ? `<td>${occurrenceMap[expense.id] || ''}</td>` : ''}
                                 <td>
                                     <button class="edit-button" onclick="editExpenseByIndex(${index})">
                                         <i class="fa-solid fa-pen-to-square"></i>
@@ -473,10 +497,11 @@
 
         async function initialize() {
             try {
-                const [configResponse, expensesResponse, cardsResponse] = await Promise.all([
+                const [configResponse, expensesResponse, cardsResponse, recurringResponse] = await Promise.all([
                     fetch('/config'),
                     fetch('/expenses'),
-                    fetch('/credit-cards')
+                    fetch('/credit-cards'),
+                    fetch('/recurring-expenses')
                 ]);
                 if (!configResponse.ok) throw new Error('Failed to fetch configuration');
                 const config = await configResponse.json();
@@ -495,6 +520,9 @@
                 cardMap = {};
                 creditCards.forEach(c => cardMap[c.id] = c);
                 populateCardSelect();
+                const recurringList = (recurringResponse.ok ? await recurringResponse.json() : null) || [];
+                recurringMap = {};
+                recurringList.forEach(r => recurringMap[r.id] = r);
 
                 allTags.clear();
                 allExpenses.forEach(exp => {
