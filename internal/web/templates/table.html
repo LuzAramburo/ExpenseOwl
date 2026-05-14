@@ -288,10 +288,11 @@
                                 'No expenses recorded for this month';
                 return `<div class="no-data">${message}</div>`;
             }
-            const hasTags = expenses.some(exp => exp.tags && exp.tags.length > 0);
-            const hasCards = expenses.some(exp => exp.cardID && cardMap[exp.cardID]);
-            const hasPurchaseDates = expenses.some(e => e.cardID && e.purchaseDate && !new Date(e.purchaseDate).toISOString().startsWith('0001'));
-            const hasRecurringWithCard = expenses.some(e => e.cardID && e.recurringID && recurringMap[e.recurringID]);
+            const base = document.getElementById('showAllToggle').checked ? allExpenses : getMonthExpenses(allExpenses);
+            const hasTags = base.some(exp => exp.tags && exp.tags.length > 0);
+            const hasCards = base.some(exp => exp.cardID && cardMap[exp.cardID]);
+            const hasPurchaseDates = base.some(e => e.cardID && e.purchaseDate && !new Date(e.purchaseDate).toISOString().startsWith('0001'));
+            const hasRecurringWithCard = base.some(e => e.cardID && e.recurringID && recurringMap[e.recurringID]);
             const occurrenceMap = {};
             if (hasRecurringWithCard) {
                 const groups = {};
@@ -631,7 +632,7 @@
             const selectedCardId = document.getElementById('cardSelect').value;
             const selectedCard = selectedCardId ? creditCards.find(c => c.id === selectedCardId) : null;
             let submittedDate = rawDate;
-            let purchaseDate = '';
+            let purchaseDate = null;
             if (selectedCard) {
                 const due = calculateCardDueDate(rawDate, selectedCard);
                 const now = new Date();
