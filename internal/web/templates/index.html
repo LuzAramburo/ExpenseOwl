@@ -510,7 +510,7 @@
             const selectedCardId = document.getElementById('cardSelect').value;
             const selectedCard = selectedCardId ? creditCards.find(c => c.id === selectedCardId) : null;
             let submittedDate = rawDate;
-            let purchaseDate = '';
+            let purchaseDate = null;
             if (selectedCard) {
                 const due = calculateCardDueDate(rawDate, selectedCard);
                 const now = new Date();
