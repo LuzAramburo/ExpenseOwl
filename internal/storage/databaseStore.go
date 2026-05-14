@@ -442,7 +442,18 @@ func (s *databaseStore) AddRecurringExpense(recurringExpense RecurringExpense) e
 		return fmt.Errorf("failed to insert recurring expense rule: %v", err)
 	}
 
-	expensesToAdd := generateExpensesFromRecurring(recurringExpense, false)
+	var card *CreditCard
+	if recurringExpense.CardID != "" {
+		if cards, err := s.GetCreditCards(); err == nil {
+			for i := range cards {
+				if cards[i].ID == recurringExpense.CardID {
+					card = &cards[i]
+					break
+				}
+			}
+		}
+	}
+	expensesToAdd := generateExpensesFromRecurring(recurringExpense, false, card)
 	if len(expensesToAdd) > 0 {
 		stmt, err := tx.Prepare(pq.CopyIn("expenses", "id", "recurring_id", "name", "category", "amount", "currency", "date", "tags", "card_id", "purchase_date"))
 		if err != nil {
@@ -451,7 +462,7 @@ func (s *databaseStore) AddRecurringExpense(recurringExpense RecurringExpense) e
 		defer stmt.Close()
 		for _, exp := range expensesToAdd {
 			expTagsJSON, _ := json.Marshal(exp.Tags)
-			_, err = stmt.Exec(exp.ID, exp.RecurringID, exp.Name, exp.Category, exp.Amount, exp.Currency, exp.Date, string(expTagsJSON), nullableString(exp.CardID), nil)
+			_, err = stmt.Exec(exp.ID, exp.RecurringID, exp.Name, exp.Category, exp.Amount, exp.Currency, exp.Date, string(expTagsJSON), nullableString(exp.CardID), nullableTime(exp.PurchaseDate))
 			if err != nil {
 				return fmt.Errorf("failed to execute copy in: %v", err)
 			}
@@ -500,7 +511,18 @@ func (s *databaseStore) UpdateRecurringExpense(id string, recurringExpense Recur
 		return fmt.Errorf("failed to delete old expense instances for update: %v", err)
 	}
 
-	expensesToAdd := generateExpensesFromRecurring(recurringExpense, !updateAll)
+	var card *CreditCard
+	if recurringExpense.CardID != "" {
+		if cards, err := s.GetCreditCards(); err == nil {
+			for i := range cards {
+				if cards[i].ID == recurringExpense.CardID {
+					card = &cards[i]
+					break
+				}
+			}
+		}
+	}
+	expensesToAdd := generateExpensesFromRecurring(recurringExpense, !updateAll, card)
 	if len(expensesToAdd) > 0 {
 		stmt, err := tx.Prepare(pq.CopyIn("expenses", "id", "recurring_id", "name", "category", "amount", "currency", "date", "tags", "card_id", "purchase_date"))
 		if err != nil {
@@ -509,7 +531,7 @@ func (s *databaseStore) UpdateRecurringExpense(id string, recurringExpense Recur
 		defer stmt.Close()
 		for _, exp := range expensesToAdd {
 			expTagsJSON, _ := json.Marshal(exp.Tags)
-			_, err = stmt.Exec(exp.ID, exp.RecurringID, exp.Name, exp.Category, exp.Amount, exp.Currency, exp.Date, string(expTagsJSON), nullableString(exp.CardID), nil)
+			_, err = stmt.Exec(exp.ID, exp.RecurringID, exp.Name, exp.Category, exp.Amount, exp.Currency, exp.Date, string(expTagsJSON), nullableString(exp.CardID), nullableTime(exp.PurchaseDate))
 			if err != nil {
 				return fmt.Errorf("failed to execute copy in for update: %v", err)
 			}
@@ -624,13 +646,20 @@ func (s *databaseStore) RemoveCreditCard(id string) error {
 	return nil
 }
 
-func generateExpensesFromRecurring(recExp RecurringExpense, fromToday bool) []Expense {
+func generateExpensesFromRecurring(recExp RecurringExpense, fromToday bool, card *CreditCard) []Expense {
 	var expenses []Expense
 	currentDate := recExp.StartDate
 	today := time.Now()
 	occurrencesToGenerate := recExp.Occurrences
 	if fromToday {
-		for currentDate.Before(today) && (recExp.Occurrences == 0 || occurrencesToGenerate > 0) {
+		for recExp.Occurrences == 0 || occurrencesToGenerate > 0 {
+			compareDate := currentDate
+			if card != nil {
+				compareDate = computeDueDate(currentDate, *card)
+			}
+			if !compareDate.Before(today) {
+				break
+			}
 			switch recExp.Interval {
 			case "daily":
 				currentDate = currentDate.AddDate(0, 0, 1)
@@ -641,7 +670,7 @@ func generateExpensesFromRecurring(recExp RecurringExpense, fromToday bool) []Ex
 			case "yearly":
 				currentDate = currentDate.AddDate(1, 0, 0)
 			default:
-				return expenses // Stop if interval is invalid
+				return expenses
 			}
 			if recExp.Occurrences > 0 {
 				occurrencesToGenerate--
@@ -649,9 +678,6 @@ func generateExpensesFromRecurring(recExp RecurringExpense, fromToday bool) []Ex
 		}
 	}
 	limit := occurrencesToGenerate
-	// if recExp.Occurrences == 0 {
-	// 	limit = 2000 // Heuristic for "indefinite"
-	// }
 
 	for range limit {
 		expense := Expense{
@@ -662,8 +688,13 @@ func generateExpensesFromRecurring(recExp RecurringExpense, fromToday bool) []Ex
 			Category:    recExp.Category,
 			Amount:      recExp.Amount,
 			Currency:    recExp.Currency,
-			Date:        currentDate,
 			Tags:        recExp.Tags,
+		}
+		if card != nil {
+			expense.PurchaseDate = currentDate
+			expense.Date = computeDueDate(currentDate, *card)
+		} else {
+			expense.Date = currentDate
 		}
 		expenses = append(expenses, expense)
 		switch recExp.Interval {

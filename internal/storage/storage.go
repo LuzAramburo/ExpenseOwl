@@ -205,6 +205,31 @@ func ValidateCategory(category string) (string, error) {
 	return sanitized, nil
 }
 
+func computeDueDate(purchaseDate time.Time, card CreditCard) time.Time {
+	cutoffYear, cutoffMonth := purchaseDate.Year(), int(purchaseDate.Month())
+	if purchaseDate.Day() > card.CutoffDate {
+		cutoffMonth++
+		if cutoffMonth > 12 {
+			cutoffMonth = 1
+			cutoffYear++
+		}
+	}
+	dueMonth, dueYear := cutoffMonth, cutoffYear
+	if card.DueDate < card.CutoffDate {
+		dueMonth++
+		if dueMonth > 12 {
+			dueMonth = 1
+			dueYear++
+		}
+	}
+	lastDay := time.Date(dueYear, time.Month(dueMonth+1), 0, 0, 0, 0, 0, time.UTC).Day()
+	dueDay := card.DueDate
+	if dueDay > lastDay {
+		dueDay = lastDay
+	}
+	return time.Date(dueYear, time.Month(dueMonth), dueDay, 0, 0, 0, 0, time.UTC)
+}
+
 func (e *Expense) Validate() error {
 	e.Name = SanitizeString(e.Name)
 	if e.Name == "" {

@@ -302,7 +302,14 @@ func (s *jsonStore) AddRecurringExpense(recurringExpense RecurringExpense) error
 	if err := s.writeConfigFile(s.configPath, config); err != nil {
 		return fmt.Errorf("failed to write config file: %v", err)
 	}
-	expensesToAdd := generateExpensesFromRecurring(recurringExpense, false)
+	var card *CreditCard
+	for i := range config.CreditCards {
+		if config.CreditCards[i].ID == recurringExpense.CardID {
+			card = &config.CreditCards[i]
+			break
+		}
+	}
+	expensesToAdd := generateExpensesFromRecurring(recurringExpense, false, card)
 	return s.AddMultipleExpenses(expensesToAdd)
 }
 
@@ -386,7 +393,14 @@ func (s *jsonStore) UpdateRecurringExpense(id string, recurringExpense Recurring
 		}
 	}
 	expensesData.Expenses = remainingExpenses
-	expensesToAdd := generateExpensesFromRecurring(recurringExpense, !updateAll)
+	var card *CreditCard
+	for i := range config.CreditCards {
+		if config.CreditCards[i].ID == recurringExpense.CardID {
+			card = &config.CreditCards[i]
+			break
+		}
+	}
+	expensesToAdd := generateExpensesFromRecurring(recurringExpense, !updateAll, card)
 	expensesData.Expenses = append(expensesData.Expenses, expensesToAdd...)
 	if err := s.writeExpensesFile(s.filePath, expensesData); err != nil {
 		return err

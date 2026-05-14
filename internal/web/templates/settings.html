@@ -167,8 +167,14 @@
                     <select id="recurringInterval" required>
                         <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
+                        <option value="monthly" selected>Monthly</option>
                         <option value="yearly">Yearly</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="recurringCardSelect">Credit Card</label>
+                    <select id="recurringCardSelect">
+                        <option value="">No Card</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -278,6 +284,12 @@
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
                         <option value="yearly">Yearly</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="editRecurringCardSelect">Credit Card</label>
+                    <select id="editRecurringCardSelect">
+                        <option value="">No Card</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -681,6 +693,12 @@
             }
         }
         
+        function populateRecurringCardSelect(selectId, selectedId) {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '<option value="">No Card</option>' +
+                creditCards.map(c => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('');
+        }
+
         async function fetchAndRenderRecurringExpenses() {
             try {
                 const response = await fetch('/recurring-expenses');
@@ -696,31 +714,27 @@
         function findNextOccurrence(r) {
             let nextDate = new Date(r.startDate);
             const today = new Date();
-            if (nextDate >= today) return nextDate.toLocaleDateString();
+            const card = r.cardID ? creditCards.find(c => c.id === r.cardID) : null;
+            const getDisplayDate = (d) => card ? calculateCardDueDate(d, card) : d;
+            const advance = () => {
+                switch (r.interval) {
+                    case 'daily': nextDate.setDate(nextDate.getDate() + 1); break;
+                    case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
+                    case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
+                    case 'yearly': nextDate.setFullYear(nextDate.getFullYear() + 1); break;
+                }
+            };
             if (r.occurrences > 0) {
-                let occurrencesCount = 0;
-                while (nextDate < today) {
-                    occurrencesCount++;
-                    if (occurrencesCount >= r.occurrences) return 'Finished';
-                    switch(r.interval) {
-                        case 'daily': nextDate.setDate(nextDate.getDate() + 1); break;
-                        case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
-                        case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
-                        case 'yearly': nextDate.setFullYear(nextDate.getFullYear() + 1); break;
-                    }
+                let count = 0;
+                while (getDisplayDate(nextDate) < today) {
+                    count++;
+                    if (count >= r.occurrences) return 'Finished';
+                    advance();
                 }
-                return nextDate.toLocaleDateString();
-            } else { // Indefinite
-                 while (nextDate < today) {
-                    switch(r.interval) {
-                        case 'daily': nextDate.setDate(nextDate.getDate() + 1); break;
-                        case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
-                        case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
-                        case 'yearly': nextDate.setFullYear(nextDate.getFullYear() + 1); break;
-                    }
-                }
-                return nextDate.toLocaleDateString();
+            } else {
+                while (getDisplayDate(nextDate) < today) advance();
             }
+            return formatDateShort(getDisplayDate(nextDate));
         }
 
         function renderRecurringExpenses(recurring) {
@@ -729,23 +743,27 @@
                 list.innerHTML = '<p>No recurring expenses found.</p>';
                 return;
             }
+            const hasCards = recurring.some(r => r.cardID && creditCards.find(c => c.id === r.cardID));
             list.innerHTML = `
                 <table class="expense-table">
-                    <thead><tr><th>Name</th><th>Amount</th><th>Category</th><th>Interval</th><th>Next Occurrence</th><th></th></tr></thead>
+                    <thead><tr><th>Name</th><th>Amount</th><th>Category</th><th>Interval</th>${hasCards ? '<th>Card</th>' : ''}<th>Next Due</th><th></th></tr></thead>
                     <tbody>
-                        ${recurring.map(r => `
+                        ${recurring.map(r => {
+                            const card = r.cardID ? creditCards.find(c => c.id === r.cardID) : null;
+                            return `
                             <tr>
-                                <td>${r.name}</td>
+                                <td>${escapeHTML(r.name)}</td>
                                 <td>${formatCurrency(r.amount)}</td>
-                                <td>${r.category}</td>
+                                <td>${escapeHTML(r.category)}</td>
                                 <td>${r.interval.charAt(0).toUpperCase() + r.interval.slice(1)}</td>
+                                ${hasCards ? `<td>${card ? escapeHTML(card.name) : ''}</td>` : ''}
                                 <td>${findNextOccurrence(r)}</td>
                                 <td>
                                     <button class="edit-button" onclick="showRecurringEditModal('${r.id}')"><i class="fa-solid fa-pen-to-square"></i></button>
                                     <button class="delete-button" onclick="showRecurringDeleteModal('${r.id}')"><i class="fa-solid fa-trash-can"></i></button>
                                 </td>
-                            </tr>
-                        `).join('')}
+                            </tr>`;
+                        }).join('')}
                     </tbody>
                 </table>`;
         }
@@ -787,6 +805,7 @@
             document.getElementById('editRecurringOccurrences').value = recurringExpenseToEdit.occurrences;
             editFormSelectedTags = new Set(recurringExpenseToEdit.tags || []);
             createTagInput('edit-tags-input', 'edit-selected-tags', 'edit-tags-dropdown', editFormSelectedTags).renderSelected();
+            populateRecurringCardSelect('editRecurringCardSelect', recurringExpenseToEdit.cardID || '');
             document.getElementById('editRecurringModal').classList.add('active');
         }
         
@@ -810,7 +829,8 @@
                 tags: Array.from(editFormSelectedTags),
                 interval: document.getElementById('editRecurringInterval').value,
                 startDate: new Date(document.getElementById('editRecurringStartDate').value).toISOString(),
-                occurrences: parseInt(document.getElementById('editRecurringOccurrences').value, 10)
+                occurrences: parseInt(document.getElementById('editRecurringOccurrences').value, 10),
+                cardID: document.getElementById('editRecurringCardSelect').value
             };
             
             try {
@@ -946,6 +966,7 @@
                 populateCurrencySelect();
                 populateStartDateInput();
                 renderCreditCards();
+                populateRecurringCardSelect('recurringCardSelect', '');
                 document.getElementById('recurringCategory').innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
                 document.getElementById('editRecurringCategory').innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
                 renderRecurringExpenses(recurringExpenses);
@@ -984,6 +1005,12 @@
         });
 
         // --- Event Listeners ---
+        document.getElementById('recurringCardSelect').addEventListener('change', (e) => {
+            if (e.target.value) document.getElementById('recurringInterval').value = 'monthly';
+        });
+        document.getElementById('editRecurringCardSelect').addEventListener('change', (e) => {
+            if (e.target.value) document.getElementById('editRecurringInterval').value = 'monthly';
+        });
         document.getElementById('addCategory').addEventListener('click', addCategory);
         document.getElementById('saveCategories').addEventListener('click', saveCategories);
         document.getElementById('saveCurrency').addEventListener('click', saveCurrency);
@@ -1005,7 +1032,8 @@
                 tags: Array.from(addFormSelectedTags),
                 interval: document.getElementById('recurringInterval').value,
                 startDate: getISODateWithLocalTime(document.getElementById('recurringStartDate').value),
-                occurrences: parseInt(document.getElementById('recurringOccurrences').value, 10)
+                occurrences: parseInt(document.getElementById('recurringOccurrences').value, 10),
+                cardID: document.getElementById('recurringCardSelect').value
             };
 
             try {
