@@ -31,7 +31,7 @@ func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	defer writer.Flush()
 
 	// Write header
-	headers := []string{"ID", "Name", "Category", "Amount", "Date", "Tags"}
+	headers := []string{"ID", "Name", "Category", "Amount", "Date", "Tags", "CardID", "PurchaseDate"}
 	if err := writer.Write(headers); err != nil {
 		log.Printf("API ERROR: Failed to write CSV header: %v\n", err)
 		return
@@ -39,6 +39,10 @@ func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 
 	// Write records
 	for _, expense := range expenses {
+		purchaseDateStr := ""
+		if !expense.PurchaseDate.IsZero() {
+			purchaseDateStr = expense.PurchaseDate.Format(time.RFC3339)
+		}
 		record := []string{
 			expense.ID,
 			expense.Name,
@@ -47,6 +51,8 @@ func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 			strconv.FormatFloat(expense.Amount, 'f', 2, 64),
 			expense.Date.Format(time.RFC3339),
 			strings.Join(expense.Tags, ","),
+			expense.CardID,
+			purchaseDateStr,
 		}
 		if err := writer.Write(record); err != nil {
 			log.Printf("API ERROR: Failed to write CSV record for expense ID %s: %v\n", expense.ID, err)
@@ -100,6 +106,8 @@ func (h *Handler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	idIdx, idExists := colMap["id"]
 	tagsIdx, tagsExists := colMap["tags"]
 	currencyIdx, currencyExists := colMap["currency"]
+	cardIDIdx, cardIDExists := colMap["cardid"]
+	purchaseDateIdx, purchaseDateExists := colMap["purchasedate"]
 
 	currentCategories, err := h.storage.GetCategories()
 	if err != nil {
@@ -177,13 +185,25 @@ func (h *Handler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		var cardID string
+		if cardIDExists {
+			cardID = strings.TrimSpace(record[cardIDIdx])
+		}
+		var purchaseDate time.Time
+		if purchaseDateExists && strings.TrimSpace(record[purchaseDateIdx]) != "" {
+			if pd, err := parseDate(strings.TrimSpace(record[purchaseDateIdx])); err == nil {
+				purchaseDate = pd
+			}
+		}
 		expense := storage.Expense{
-			Name:     strings.TrimSpace(record[colMap["name"]]),
-			Category: category,
-			Amount:   amount,
-			Currency: localCurrency,
-			Date:     date,
-			Tags:     tags,
+			Name:         strings.TrimSpace(record[colMap["name"]]),
+			Category:     category,
+			Amount:       amount,
+			Currency:     localCurrency,
+			Date:         date,
+			Tags:         tags,
+			CardID:       cardID,
+			PurchaseDate: purchaseDate,
 		}
 		if err := expense.Validate(); err != nil {
 			log.Printf("Warning: Skipping row %d due to validation error: %v\n", i+2, err)

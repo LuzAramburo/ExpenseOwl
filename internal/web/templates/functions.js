@@ -79,6 +79,30 @@ function getISODateWithLocalTime(dateInput) {
     return localDateTime.toISOString();
 }
 
+function formatDateShort(dateStr) {
+    return new Date(dateStr).toLocaleDateString('en-US', {
+        month: 'long', day: 'numeric', year: 'numeric'
+    });
+}
+
+function calculateCardDueDate(expenseDate, card) {
+    const d = new Date(expenseDate);
+    let cutoffYear = d.getFullYear();
+    let cutoffMonth = d.getMonth();
+    if (d.getDate() > card.cutoffDate) {
+        cutoffMonth++;
+        if (cutoffMonth > 11) { cutoffMonth = 0; cutoffYear++; }
+    }
+    // Due is next month only when dueDate day falls before cutoffDate day (e.g. cutoff 16, due 6)
+    let dueMonth = cutoffMonth, dueYear = cutoffYear;
+    if (card.dueDate < card.cutoffDate) {
+        dueMonth++;
+        if (dueMonth > 11) { dueMonth = 0; dueYear++; }
+    }
+    const lastDay = new Date(dueYear, dueMonth + 1, 0).getDate();
+    return new Date(dueYear, dueMonth, Math.min(card.dueDate, lastDay));
+}
+
 function formatDateFromUTC(utcDateString) {
     const date = new Date(utcDateString);
     return date.toLocaleDateString('en-US', {

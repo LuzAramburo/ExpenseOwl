@@ -271,6 +271,97 @@ func (h *Handler) DeleteMultipleExpenses(w http.ResponseWriter, r *http.Request)
 }
 
 // ------------------------------------------------------------
+// Credit Card Handlers
+// ------------------------------------------------------------
+
+func (h *Handler) GetCreditCards(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		return
+	}
+	cards, err := h.storage.GetCreditCards()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to get credit cards"})
+		log.Printf("API ERROR: Failed to get credit cards: %v\n", err)
+		return
+	}
+	if cards == nil {
+		cards = []storage.CreditCard{}
+	}
+	writeJSON(w, http.StatusOK, cards)
+}
+
+func (h *Handler) AddCreditCard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		return
+	}
+	var card storage.CreditCard
+	if err := json.NewDecoder(r.Body).Decode(&card); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+		return
+	}
+	if err := card.Validate(); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if card.ID == "" {
+		card.ID = storage.NewID()
+	}
+	if err := h.storage.AddCreditCard(card); err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to add credit card"})
+		log.Printf("API ERROR: Failed to add credit card: %v\n", err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, card)
+}
+
+func (h *Handler) EditCreditCard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "ID parameter is required"})
+		return
+	}
+	var card storage.CreditCard
+	if err := json.NewDecoder(r.Body).Decode(&card); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+		return
+	}
+	if err := card.Validate(); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if err := h.storage.UpdateCreditCard(id, card); err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to edit credit card"})
+		log.Printf("API ERROR: Failed to edit credit card: %v\n", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, card)
+}
+
+func (h *Handler) DeleteCreditCard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "ID parameter is required"})
+		return
+	}
+	if err := h.storage.RemoveCreditCard(id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete credit card"})
+		log.Printf("API ERROR: Failed to delete credit card: %v\n", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "success"})
+}
+
+// ------------------------------------------------------------
 // Recurring Expense Handlers
 // ------------------------------------------------------------
 
